@@ -1,7 +1,0 @@
-CorrelationId: 11ea8b63-9b83-4a18-89a6-adafb6284ef1
-UTC DateTime: 08/31/2024 09:50:00
-
-The following files/folders have not been downloaded
-0. multi_dataset/train/ma/52671.jpg
-1. multi_dataset/train/ma/53158.jpg
-2. multi_dataset/train/ma/5529.jpg
