@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+#Remember to import "numpy_transforms" functions if you wish to import these two classes in a different script.
+
 np.random.seed(0)
 
 class CustomImageDataset:
@@ -83,8 +85,8 @@ class DataLoader:
 
 if __name__ == '__main__':
     # Root directory containing the 8 subfolders
-    root_dir = "/home/kaustubh/scratch/COL774_A2_TA_files/dataset_for_assignment_binary/"
-    mode = None #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
+    root_dir = "" #Path to the dataset directory
+    mode = 'train' #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
 
     if mode == 'train': # Set mode to train when using the dataloader for training the model.
         csv = os.path.join(root_dir, "train.csv")
@@ -93,13 +95,13 @@ if __name__ == '__main__':
         csv = os.path.join(root_dir, "val.csv")
 
     # Create the custom dataset
-    dataset = CustomImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)
+    dataset = CustomImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)  #Remember to import "numpy_transforms" functions.
 
     # Create the DataLoader
     dataloader = DataLoader(dataset, batch_size=1)
 
     # Iterate through the DataLoader
     for images, labels in dataloader:
-        print(images.shape)  # Should be [batch_size, 50, 100, 3]
+        print(images.shape)  # Should be [batch_size, 625]
         print(labels.shape)  # Should be [batch_size]
         #Data being loaded!
