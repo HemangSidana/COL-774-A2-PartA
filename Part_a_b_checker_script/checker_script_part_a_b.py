@@ -36,5 +36,5 @@ def show_diff(yourfile, gtfile):
 
 if __name__ == '__main__':
     your_weights_file = "weights.pkl"  #Add path to your weights.pkl here for a particular epoch.
-    GT_weights_file = "Part_a_b_checker_script/Binary_NN_1_wts_biases/ep_1.pkl" #Add path to the given weights.pkl here for a particular epoch to be used for comparison.
+    GT_weights_file = "Part_a_b_checker_script/Binary_xavier_updated_part_1_a/ep_5.pkl" #Add path to the given weights.pkl here for a particular epoch to be used for comparison.
     show_diff(your_weights_file, GT_weights_file)
