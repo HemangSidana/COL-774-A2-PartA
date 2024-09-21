@@ -295,7 +295,7 @@ best_seed = 0
 
 for _ in range (1):
     nn = NeuralNetwork_Adam(625, [512, 256, 128, 32], 8)
-    nn.train(batches, 13, 0.001)
+    nn.train(batches, 14, 0.001)
     if nn.get_best_loss() < best_loss:
         best_loss = nn.get_best_loss()
         best_weights = nn.get_best_weights()
