@@ -3,14 +3,21 @@ import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image
-import sys      #TODO: argsparser or this?
+import argparse
 # from numpy import numpy_transforms    #TODO: check
 import pickle
 
 #Remember to import "numpy_transforms" functions if you wish to import these two classes in a different script.
 
-root_dir = sys.argv[1]
-weights_saving_path = sys.argv[2]
+# Set up argument parser
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--dataset_root', type=str, required=True, help='Directory with all the subfolders.')
+parser.add_argument('--save_weights_path', type=str, required=True, help='Path to save the weights.')
+
+args = parser.parse_args()
+
+root_dir = args.dataset_root
+weights_saving_path = args.save_weights_path
 
 np.random.seed(0)
 
