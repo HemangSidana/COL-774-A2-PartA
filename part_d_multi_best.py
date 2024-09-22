@@ -27,7 +27,7 @@ predictions_saving_path = args.save_predictions_path
 
 np.random.seed(0)
 
-class CustomImageDataset:
+class TrainImageDataset:
     def __init__(self, root_dir, csv, transform=None):
         """
         Args:
@@ -66,7 +66,7 @@ def numpy_transform(image, size=(25, 25)):
     image = image.flatten()
     return image
 
-class DataLoader:
+class TrainDataLoader:
     def __init__(self, dataset, batch_size=1):
         self.dataset = dataset
         self.batch_size = batch_size
@@ -101,23 +101,17 @@ class DataLoader:
         batch_labels = np.array(labels)
 
         return batch_images, batch_labels
-    
 
 
-# Root directory containing the 8 subfolders
-mode = 'train' #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
-
-if mode == 'train': # Set mode to train when using the dataloader for training the model.
-    csv = os.path.join(root_dir, "train.csv")
-
-elif mode == 'val':
-    csv = os.path.join(root_dir, "val.csv")
+csv = os.path.join(root_dir, "train.csv") #The csv file will always be placed inside the dataset directory.
+#Please ensure that you set the csv file path accordingly in all parts of the assignment so that it gets loaded correctly.
+#While evaluation, the train.csv will have same name while the test set csv will be renamed to "val.csv" to be compatible with the setting here.
 
 # Create the custom dataset
-dataset = CustomImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)
+dataset = TrainImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)  #Remember to import "numpy_transforms" functions.
 
 # Create the DataLoader
-dataloader = DataLoader(dataset, batch_size=256)
+dataloader = TrainDataLoader(dataset, batch_size=256)
 
 def one_hot_encode(y, num_classes):
     # Convert y to a 2D one-hot encoding matrix
@@ -363,42 +357,116 @@ for i in range(N):
 with open(weights_saving_path, 'wb') as f:
     pickle.dump(weights_dict, f)
 
+np.random.seed(0)
 
-mode = 'val' #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
+class TestImageDataset:
+    def __init__(self, root_dir, csv, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the subfolders.
+            transform (callable, optional): Optional transform to be applied on a sample.
+        """
+        self.root_dir = root_dir
+        self.transform = transform
+        self.df = pd.read_csv(csv)
 
-if mode == 'train': # Set mode to train when using the dataloader for training the model.
-    csv = os.path.join(root_dir, "train.csv")
+    def __len__(self):
+        return len(self.df)
 
-elif mode == 'val':
-    csv = os.path.join(root_dir, "val.csv")
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+        img_path = os.path.join(self.root_dir, row["Path"])
+        image = Image.open(img_path).convert("L") #Convert image to greyscale
+
+        if self.transform:
+            image = self.transform(image)
+
+        return np.array(image)
+
+# Transformations using NumPy
+def resize(image, size):
+    # return np.array(Image.fromarray(image).resize(size))
+    return np.array(image.resize(size))
+
+def to_tensor(image):
+    return image.astype(np.float32) / 255.0
+
+def numpy_transform(image, size=(25, 25)):
+    image = resize(image, size)
+    image = to_tensor(image)
+    image = image.flatten()
+    return image
+
+class TestDataLoader:
+    def __init__(self, dataset, batch_size=1):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.indices = np.arange(len(dataset))
+        # if self.shuffle:
+        #     np.random.shuffle(self.indices)
+
+    def __iter__(self):
+        self.start_idx = 0
+        return self
+    def __len__(self):
+        return int(len(self.dataset)/self.batch_size)
+
+    def __next__(self):
+        if self.start_idx >= len(self.dataset):
+            raise StopIteration
+
+        end_idx = min(self.start_idx + self.batch_size, len(self.dataset))
+        batch_indices = self.indices[self.start_idx:end_idx]
+        images = []
+        labels = []
+
+        for idx in batch_indices:
+            image = self.dataset[idx]
+            images.append(image)
+
+        self.start_idx = end_idx
+
+        # Stack images and labels to create batch tensors
+        batch_images = np.stack(images, axis=0)
+
+        return batch_images
+    
+# Root directory containing the 8 subfolders
+csv = os.path.join(root_dir, "val.csv") #The csv file will always be placed inside the dataset directory.
+#Please ensure that you set the csv file path accordingly in all parts of the assignment so that it gets loaded correctly.
+#While evaluation, the train.csv will have same name while the test set csv will be renamed to "val.csv" to be compatible with the setting here.
 
 # Create the custom dataset
-dataset = CustomImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)
-# Create the DataLoader
-dataloader = DataLoader(dataset, batch_size=len(dataset))
+dataset = TestImageDataset(root_dir=test_root_dir, csv = csv, transform=numpy_transform)  #Remember to import "numpy_transforms" functions.
 
-def one_hot_encode(y, num_classes):
-    # Convert y to a 2D one-hot encoding matrix
-    y_one_hot = np.zeros((len(y), num_classes))
-    y_one_hot[np.arange(len(y)), y] = 1
-    return y_one_hot
+# Create the DataLoader
+dataloader = TestDataLoader(dataset, batch_size=1)
+
+# def one_hot_encode(y, num_classes):
+#     # Convert y to a 2D one-hot encoding matrix
+#     y_one_hot = np.zeros((len(y), num_classes))
+#     y_one_hot[np.arange(len(y)), y] = 1
+#     return y_one_hot
 
 batches=[]
-for images,labels in dataloader:
-    one_hot_labels= one_hot_encode(labels,8)
-    batches.append((images,one_hot_labels))
+for images in dataloader:
+    # one_hot_labels= one_hot_encode(labels,8)
+    batches.append(images)
 
-for X_val, Y_val in batches:
+predictions = []
+for X_val in batches:
     Y_pred= nn.predict(X_val)
+    predictions.append(Y_pred)
     # print(cross_entropy_loss(Y_val,Y_pred)/len(dataset))
     # print(accuracy(Y_val, Y_pred))
 
-# get argmax of the predictions
-Y_pred = np.argmax(Y_pred, axis=1)
+predictions = np.array(predictions)
+predictions = np.argmax(predictions, axis=2)
+predictions = predictions.flatten()
 
 # print(Y_pred.shape)
 # print(Y_pred[:10])
 
 # save y_pred in pickle file
 with open(predictions_saving_path, 'wb') as f:
-    pickle.dump(Y_pred, f)
+    pickle.dump(predictions, f)
