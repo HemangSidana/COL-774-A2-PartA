@@ -1,23 +1,27 @@
+import argparse
+
 import os
 import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image
-import argparse
 import time
 import pickle
 
-start_time = time.time()
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--dataset_root', type=str, required=True, help='Directory with all the subfolders.')
+parser.add_argument('--test_dataset_root', type=str, required=True, help='Directory with the test dataset.')
 parser.add_argument('--save_weights_path', type=str, required=True, help='Path to save the weights.')
+parser.add_argument('--save_predictions_path', type=str, required=True, help='Path to save the predictions.')
 
 args = parser.parse_args()
 
 root_dir = args.dataset_root
+test_root_dir = args.test_dataset_root
 weights_saving_path = args.save_weights_path
+predictions_saving_path = args.save_predictions_path
 
 #Remember to import "numpy_transforms" functions if you wish to import these two classes in a different script.
 
@@ -100,6 +104,7 @@ class DataLoader:
     
 
 
+# Root directory containing the 8 subfolders
 mode = 'train' #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
 
 if mode == 'train': # Set mode to train when using the dataloader for training the model.
@@ -125,14 +130,19 @@ for images,labels in dataloader:
     one_hot_labels= one_hot_encode(labels,8)
     batches.append((images,one_hot_labels))
 
-
-# Sigmoid activation and its derivative
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 def sigmoid_derivative(x):
     s = sigmoid(x)
     return s * (1 - s)
+
+# Leaky ReLU activation and its derivative
+def leaky_relu(x, alpha=0.01):
+    return np.where(x > 0, x, alpha * x)
+
+def leaky_relu_derivative(x, alpha=0.01):
+    return np.where(x > 0, 1, alpha)
 
 def softmax(x, axis=None):
     exps = np.exp(x - np.max(x, axis=axis, keepdims=True))
@@ -143,10 +153,13 @@ def cross_entropy_loss(y_true, y_pred):
     y_pred = np.clip(y_pred, 1e-12, 1 - 1e-12)  # Avoid log(0)
     return -np.sum(np.sum(y_true * np.log(y_pred), axis=1))
 
-# Neural Network Class with Softmax in the Output Layer and Sigmoid in Hidden Layers
+def accuracy(y_true, y_pred):
+    return np.mean(np.argmax(y_true, axis=1) == np.argmax(y_pred, axis=1))
+
+# Neural Network Class with Leaky ReLU and Adam Optimizer
 class NeuralNetwork_Adam:
-    def __init__(self, input_size, hidden_sizes, output_size, init_weights = None, init_biases = None, init_seed = None, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        # if (init_seed is None):
+    def __init__(self, input_size, hidden_sizes, output_size, init_weights=None, init_biases=None, init_seed=None, alpha=0.01, beta1=0.9, beta2=0.999, epsilon=1e-8):
+        # if init_seed is None:
         #     self.best_seed = int(time.time())
         #     np.random.seed(self.best_seed)
         # else:
@@ -162,6 +175,7 @@ class NeuralNetwork_Adam:
         self.beta2 = beta2
         self.epsilon = epsilon
         self.t = 0  # Time step for Adam
+        self.alpha = alpha  # Leaky ReLU parameter
         self.best_weights = []
         self.best_biases = []
         self.best_loss = float("inf")
@@ -170,7 +184,7 @@ class NeuralNetwork_Adam:
         
         # Initialize weights, biases, and Adam parameters (m, v)
         for i in range(len(layer_sizes) - 1):
-            if (init_weights is not None) and (init_biases is not None):
+            if init_weights is not None and init_biases is not None:
                 self.weights.append(init_weights[i])
                 self.biases.append(init_biases[i])
             else:
@@ -180,22 +194,43 @@ class NeuralNetwork_Adam:
             self.v_w.append(np.zeros_like(self.weights[-1]))
             self.m_b.append(np.zeros_like(self.biases[-1]))
             self.v_b.append(np.zeros_like(self.biases[-1]))
-            # self.best_weights = self.weights
-            # self.best_biases = self.biases
+        # self.best_weights = self.weights
+        # self.best_biases = self.biases
 
     def forward(self, X):
         activations = [X]
         pre_activations = []
 
-        # Pass through each layer except the output layer
+        # Pass through each hidden layer
         for i in range(len(self.weights) - 1):
             z = np.dot(activations[-1], self.weights[i]) + self.biases[i]
             pre_activations.append(z)
-            a = sigmoid(z)  # Sigmoid for hidden layers
+            a = leaky_relu(z, alpha=self.alpha)  # Leaky ReLU for hidden layers
+            # a = sigmoid(z)
             activations.append(a)
 
         # Pass through the output layer with softmax
         z = np.dot(activations[-1], self.weights[-1]) + self.biases[-1]
+        pre_activations.append(z)
+        a = softmax(z, axis=1)  # Softmax for the output layer
+        activations.append(a)
+
+        return activations, pre_activations
+
+    def forward_pred(self, X):
+        activations = [X]
+        pre_activations = []
+
+        # Pass through each hidden layer
+        for i in range(len(self.best_weights) - 1):
+            z = np.dot(activations[-1], self.best_weights[i]) + self.best_biases[i]
+            pre_activations.append(z)
+            a = leaky_relu(z, alpha=self.alpha)  # Leaky ReLU for hidden layers
+            # a = sigmoid(z)
+            activations.append(a)
+
+        # Pass through the output layer with softmax
+        z = np.dot(activations[-1], self.best_weights[-1]) + self.best_biases[-1]
         pre_activations.append(z)
         a = softmax(z, axis=1)  # Softmax for the output layer
         activations.append(a)
@@ -214,7 +249,8 @@ class NeuralNetwork_Adam:
             grad_b[i] = np.sum(delta, axis=0, keepdims=True) / delta.shape[0]
 
             if i > 0:
-                delta = np.dot(delta, self.weights[i].T) * sigmoid_derivative(pre_activations[i - 1])
+                delta = np.dot(delta, self.weights[i].T) * leaky_relu_derivative(pre_activations[i - 1], alpha=self.alpha)
+                # delta = np.dot(delta, self.weights[i].T) * sigmoid_derivative(pre_activations[i - 1])
 
         return grad_w, grad_b
 
@@ -245,7 +281,7 @@ class NeuralNetwork_Adam:
     def train(self, batches, time_of_running, learning_rate):
         start_time = time.time()
         epoch = 0
-        while(True):
+        while epoch < 2250:
             for X_batch, y_batch in batches:
                 activations, pre_activations = self.forward(X_batch)
                 grad_w, grad_b = self.backward(X_batch, y_batch, activations, pre_activations)
@@ -260,18 +296,19 @@ class NeuralNetwork_Adam:
                 z += len(y_pred[-1])
             loss /= z
             
-            if (loss < self.best_loss):
+            if loss < self.best_loss:
                 self.best_loss = loss
                 self.best_weights = [np.copy(w) for w in self.weights]  # Use np.copy to create independent copies
                 self.best_biases = [np.copy(b) for b in self.biases]  # Use np.copy for biases
             # print(f"Epoch {epoch + 1}, Loss: {loss:.10f}")
+            # get_stat()
             epoch += 1
             # if time elapsed is greater than 1 minute, break the loop
-            if time.time() - start_time > 60*time_of_running:
+            if time.time() - start_time > 60 * time_of_running:
                 break
 
     def predict(self, X):
-        activations, _ = self.forward(X)
+        activations, _ = self.forward_pred(X)
         return activations[-1]
     
     def get_best_weights(self):
@@ -285,18 +322,18 @@ class NeuralNetwork_Adam:
     
     # def get_best_seed(self):
     #     return self.best_seed
-    
+
 
 best_loss = float('inf')
 best_weights_init = []
 best_biases_init = []
 best_weights = []
 best_biases = []
-best_seed = 0
+# best_seed = 0
 
 for _ in range (1):
-    nn = NeuralNetwork_Adam(625, [512, 256, 128, 32], 8, beta1=0.95, beta2=0.999)
-    nn.train(batches, 14, 0.0015)
+    nn = NeuralNetwork_Adam(625, [256,128,64], 8, beta1=0.95, beta2=0.999)
+    nn.train(batches,14,learning_rate=0.0015)
     if nn.get_best_loss() < best_loss:
         best_loss = nn.get_best_loss()
         best_weights = nn.get_best_weights()
@@ -306,7 +343,7 @@ for _ in range (1):
 # print(best_loss)
 
 # Number of layers in the Neural Network
-N = 5  # Example value, replace with the actual number of layers
+N = 4  # Example value, replace with the actual number of layers
 
 # Initialize the dictionary
 weights_dict = {
@@ -326,5 +363,42 @@ for i in range(N):
 with open(weights_saving_path, 'wb') as f:
     pickle.dump(weights_dict, f)
 
-end_time = time.time()
-# print(f"Time taken: {end_time - start_time:.5f} seconds")
+
+mode = 'val' #Set mode to 'train' for loading the train set for training. Set mode to 'val' for testing your model after training. 
+
+if mode == 'train': # Set mode to train when using the dataloader for training the model.
+    csv = os.path.join(root_dir, "train.csv")
+
+elif mode == 'val':
+    csv = os.path.join(root_dir, "val.csv")
+
+# Create the custom dataset
+dataset = CustomImageDataset(root_dir=root_dir, csv = csv, transform=numpy_transform)
+# Create the DataLoader
+dataloader = DataLoader(dataset, batch_size=len(dataset))
+
+def one_hot_encode(y, num_classes):
+    # Convert y to a 2D one-hot encoding matrix
+    y_one_hot = np.zeros((len(y), num_classes))
+    y_one_hot[np.arange(len(y)), y] = 1
+    return y_one_hot
+
+batches=[]
+for images,labels in dataloader:
+    one_hot_labels= one_hot_encode(labels,8)
+    batches.append((images,one_hot_labels))
+
+for X_val, Y_val in batches:
+    Y_pred= nn.predict(X_val)
+    # print(cross_entropy_loss(Y_val,Y_pred)/len(dataset))
+    # print(accuracy(Y_val, Y_pred))
+
+# get argmax of the predictions
+Y_pred = np.argmax(Y_pred, axis=1)
+
+# print(Y_pred.shape)
+# print(Y_pred[:10])
+
+# save y_pred in pickle file
+with open(predictions_saving_path, 'wb') as f:
+    pickle.dump(Y_pred, f)
